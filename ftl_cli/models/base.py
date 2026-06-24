@@ -24,9 +24,12 @@ class System:
     def is_functional(self) -> bool:
         return self.health > 0 and self.current_power > 0
 
-    def take_damage(self, amount: int):
-        self.health = max(0, self.health - amount)
-        self.current_power = min(self.current_power, self.health)
+    def take_damage(self, amount: int) -> int:
+        """Returns the amount of power lost due to damage."""
+        old_power = self.current_power
+        self.health = max(0.0, float(self.health) - amount)
+        self.current_power = min(self.current_power, int(self.health))
+        return old_power - self.current_power
 
     def repair(self, amount: float):
         self.health = min(self.max_power, self.health + amount)

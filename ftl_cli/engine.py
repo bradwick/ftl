@@ -143,6 +143,13 @@ class GameEngine:
 
             # Check if manned
             system.is_manned = any(c.room.system == system for c in ship.crew if c.room and c.room.system)
+
+            # Repair logic
+            if system.health < system.max_power:
+                crew_repairing = [c for c in ship.crew if c.room and c.room.system == system]
+                if crew_repairing and not self.state.is_paused:
+                    repair_rate = 0.5 * len(crew_repairing) * dt # 0.5 HP per second per crew
+                    system.repair(repair_rate)
             # FTL logic: manning provides bonuses
             if system.is_manned:
                 # Find the best crew member for this system
@@ -161,7 +168,8 @@ class GameEngine:
                 if room.fire_level > 0:
                     # Fire damages system in room
                     if room.system:
-                        room.system.take_damage(dt * 0.1) # Fire damage rate
+                        power_lost = room.system.take_damage(dt * 0.1) # Fire damage rate
+                        ship.reactor_used -= power_lost
                     # Fire damages crew in room
                     for c in room.crew_members:
                         c.health -= dt * 5.0
@@ -227,7 +235,8 @@ class GameEngine:
 
                 # Impact logic: each shot can be evaded or shielded
                 for _ in range(w.shots):
-                    self._apply_damage(target, w.damage, target_room)
+                    if target.hull > 0:
+                        self._apply_damage(target, w.damage, target_room)
 
     def _apply_damage(self, target: Ship, damage: int, forced_target_room: Optional[Room] = None):
         # Evasion check (Engines + Pilot)
@@ -266,14 +275,15 @@ class GameEngine:
                 return
 
         # Hull damage
-        target.hull -= damage
+        target.hull = max(0, target.hull - damage)
         self.state.add_log(f"{target.name} hit for {damage} damage!")
 
         # System damage
-        if target.rooms:
+        if target.rooms and target.hull > 0:
             hit_room = forced_target_room if forced_target_room and forced_target_room in target.rooms else random.choice(target.rooms)
             if hit_room.system:
-                hit_room.system.take_damage(1) # Systems take 1 damage per hit
+                power_lost = hit_room.system.take_damage(1) # Systems take 1 damage per hit
+                target.reactor_used -= power_lost
                 self.state.add_log(f"{hit_room.id} system damaged!")
 
             # Fire chance

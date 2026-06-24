@@ -19,6 +19,12 @@ pip install -r requirements.txt
 python3 main.py
 ```
 
+### GUI Version (Recommended)
+
+```bash
+python3 gui_main.py
+```
+
 ## Controls (Paused)
 
 - `SPACE`: Pause / Unpause

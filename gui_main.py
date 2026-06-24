@@ -1,0 +1,142 @@
+import pygame
+import sys
+import time
+from ftl_cli.models.base import Ship, Room, System, SystemType, Crew, Weapon
+from ftl_cli.engine import GameState, GameEngine
+from ftl_cli.ui.pygame_renderer import PygameRenderer
+
+def create_initial_ship():
+    rooms = [
+        Room("Pilot", 8, 2, 2, 2, System(SystemType.PILOT, 1)),
+        Room("Shields", 4, 2, 2, 2, System(SystemType.SHIELDS, 2)),
+        Room("Weapons", 4, 0, 2, 2, System(SystemType.WEAPONS, 2)),
+        Room("Engines", 2, 2, 2, 2, System(SystemType.ENGINES, 2)),
+        Room("Medbay", 4, 4, 2, 2, System(SystemType.MEDBAY, 1)),
+        Room("Oxygen", 6, 2, 2, 2, System(SystemType.OXYGEN, 1)),
+    ]
+    ship = Ship("The Kestrel", rooms)
+    ship.systems[SystemType.PILOT].current_power = 1
+    ship.systems[SystemType.SHIELDS].current_power = 2
+    ship.systems[SystemType.WEAPONS].current_power = 2
+    ship.systems[SystemType.ENGINES].current_power = 1
+    ship.systems[SystemType.OXYGEN].current_power = 1
+    ship.reactor_used = 7
+    ship.weapons.append(Weapon("Burst Laser", 1, 3.0, 2, shots=3))
+    c1 = Crew("Jules")
+    c1.room = rooms[0]
+    rooms[0].crew_members.append(c1)
+    ship.crew.append(c1)
+    return ship
+
+def create_enemy_ship():
+    rooms = [
+        Room("Pilot", 0, 1, 2, 2, System(SystemType.PILOT, 1)),
+        Room("Shields", 2, 1, 2, 2, System(SystemType.SHIELDS, 2)),
+        Room("Weapons", 2, 3, 2, 2, System(SystemType.WEAPONS, 1)),
+    ]
+    ship = Ship("Rebel Scout", rooms)
+    ship.systems[SystemType.PILOT].current_power = 1
+    ship.systems[SystemType.SHIELDS].current_power = 2
+    ship.systems[SystemType.WEAPONS].current_power = 1
+    ship.weapons.append(Weapon("Basic Laser", 1, 5.0, 1))
+    return ship
+
+def main():
+    FPS = 60
+    player_ship = create_initial_ship()
+    state = GameState(player_ship)
+    state.enemy_ship = create_enemy_ship()
+
+    engine = GameEngine(state)
+    renderer = PygameRenderer()
+
+    clock = pygame.time.Clock()
+    selection = {"crew": None}
+
+    running = True
+    while running:
+        # Handle Events
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.KEYDOWN:
+                key = event.key
+                ship = state.player_ship
+
+                if key == pygame.K_SPACE:
+                    state.is_paused = not state.is_paused
+                elif key == pygame.K_q:
+                    running = False
+
+                # Input handling similar to CLI
+                if state.is_paused:
+                    if key == pygame.K_1:
+                        sys_w = ship.systems.get(SystemType.WEAPONS)
+                        if sys_w and sys_w.current_power < sys_w.max_power and ship.reactor_available > 0:
+                            sys_w.current_power += 1
+                            ship.reactor_used += 1
+                    elif key == pygame.K_EXCLAIM or (key == pygame.K_1 and pygame.key.get_mods() & pygame.KMOD_SHIFT):
+                         sys_w = ship.systems.get(SystemType.WEAPONS)
+                         if sys_w and sys_w.current_power > 0:
+                            sys_w.current_power -= 1
+                            ship.reactor_used -= 1
+                    elif key == pygame.K_2:
+                        sys_s = ship.systems.get(SystemType.SHIELDS)
+                        if sys_s and sys_s.current_power < sys_s.max_power and ship.reactor_available > 0:
+                            sys_s.current_power += 1
+                            ship.reactor_used += 1
+                    elif key == pygame.K_QUOTEDBL or (key == pygame.K_2 and pygame.key.get_mods() & pygame.KMOD_SHIFT):
+                        sys_s = ship.systems.get(SystemType.SHIELDS)
+                        if sys_s and sys_s.current_power > 0:
+                            sys_s.current_power -= 1
+                            ship.reactor_used -= 1
+                    elif key == pygame.K_u:
+                        if ship.scrap >= 20:
+                            ship.scrap -= 20
+                            ship.reactor_max += 1
+                            state.add_log("Upgraded Reactor (+1 Power)")
+                    elif key == pygame.K_h:
+                        if ship.scrap >= 10 and ship.hull < ship.max_hull:
+                            ship.scrap -= 10
+                            ship.hull = min(ship.max_hull, ship.hull + 5)
+                            state.add_log("Healed Hull (+5)")
+                    elif key == pygame.K_c:
+                        if not selection["crew"]:
+                            selection["crew"] = ship.crew[0] if ship.crew else None
+                        else:
+                            idx = ship.crew.index(selection["crew"])
+                            selection["crew"] = ship.crew[(idx + 1) % len(ship.crew)]
+                        state.add_log(f"Selected: {selection['crew'].name if selection['crew'] else 'None'}")
+                    elif pygame.K_4 <= key <= pygame.K_9:
+                        if selection["crew"]:
+                            room_idx = key - pygame.K_4
+                            if 0 <= room_idx < len(ship.rooms):
+                                target = ship.rooms[room_idx]
+                                selection["crew"].move_to(target)
+                                state.add_log(f"Moving {selection['crew'].name} to {target.id}")
+                    elif key == pygame.K_t and state.enemy_ship:
+                        enemy = state.enemy_ship
+                        if not state.selected_target_room:
+                            state.selected_target_room = enemy.rooms[0]
+                        else:
+                            idx = enemy.rooms.index(state.selected_target_room)
+                            state.selected_target_room = enemy.rooms[(idx + 1) % len(enemy.rooms)]
+                        state.add_log(f"Targeting enemy {state.selected_target_room.id}")
+                    elif key == pygame.K_j and not state.enemy_ship and not state.is_jumping:
+                        state.is_jumping = True
+                        state.is_paused = False
+                        state.add_log("Initiating FTL Jump...")
+
+        # Update
+        engine.update()
+
+        # Render
+        renderer.render(state)
+
+        clock.tick(FPS)
+
+    pygame.quit()
+    sys.exit()
+
+if __name__ == "__main__":
+    main()
