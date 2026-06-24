@@ -27,9 +27,10 @@ def generate_enemy(difficulty: int) -> Ship:
         ship.weapons.append(Weapon("Basic Laser", 1, 5.0, 1))
     elif difficulty < 6:
         ship.weapons.append(Weapon("Dual Lasers", 1, 4.0, 1, shots=2))
-    else:
+    elif difficulty < 9:
         ship.weapons.append(Weapon("Burst Laser II", 1, 3.0, 2, shots=3))
-        if difficulty > 8:
-            ship.weapons.append(Weapon("Mini Beam", 2, 6.0, 1))
+    else:
+        ship.weapons.append(Weapon("Flak I", 1, 4.0, 2, shots=3))
+        ship.weapons.append(Weapon("Heavy Laser", 2, 5.0, 1))
 
     return ship

@@ -1,4 +1,5 @@
 import time
+import random
 from typing import List, Optional, Callable
 from ftl_cli.models.base import Ship, Crew, SystemType, Room
 from ftl_cli.utils.pathfinding import find_path
@@ -15,6 +16,11 @@ class GameState:
         self.difficulty = 1
         self.encounters_won = 0
         self.selected_target_room: Optional[Room] = None
+        self.sector = 1
+        self.beacons_in_sector = 5
+        self.current_beacon = 0
+        self.is_jumping = False
+        self.jump_timer = 0.0
 
     def add_log(self, message: str):
         self.log.append(message)
@@ -34,13 +40,31 @@ class GameEngine:
         if self.state.is_paused or self.state.game_over:
             return
 
-        # Progression: Spawn enemy if none exists
-        if not self.state.enemy_ship:
-            self.state.time_acc += dt
-            if self.state.time_acc > 5.0: # 5 second delay between encounters
-                self.state.enemy_ship = generate_enemy(self.state.difficulty)
-                self.state.add_log(f"Jump complete! Warning: {self.state.enemy_ship.name} detected!")
-                self.state.time_acc = 0.0
+        # Jump Logic
+        if self.state.is_jumping:
+            self.state.jump_timer += dt
+            if self.state.jump_timer >= 3.0:
+                self.state.is_jumping = False
+                self.state.jump_timer = 0.0
+                self.state.current_beacon += 1
+                if self.state.current_beacon >= self.state.beacons_in_sector:
+                    self.state.sector += 1
+                    self.state.current_beacon = 0
+                    self.state.add_log(f"Entering Sector {self.state.sector}...")
+
+                # Boss check
+                if self.state.sector == 3 and self.state.current_beacon == self.state.beacons_in_sector - 1:
+                    self.state.enemy_ship = self._generate_boss()
+                    self.state.add_log("WARNING: REBEL FLAGSHIP DETECTED!")
+                else:
+                    self.state.enemy_ship = generate_enemy(self.state.difficulty)
+                    self.state.add_log(f"Jump complete! Warning: {self.state.enemy_ship.name} detected!")
+            return # Don't update ships while jumping
+
+        # Progression: Spawn enemy if none exists and not jumping
+        if not self.state.enemy_ship and not self.state.is_jumping:
+            # Player needs to initiate jump
+            pass
 
         self._update_ship(self.state.player_ship, dt)
         if self.state.enemy_ship:
@@ -71,6 +95,22 @@ class GameEngine:
 
         # Update Systems
         for system in ship.systems.values():
+            # Oxygen logic
+            if system.type == SystemType.OXYGEN:
+                oxygen_change = dt * 3.0 if system.is_functional else -dt * 1.5
+                for room in ship.rooms:
+                    room.oxygen = max(0.0, min(100.0, room.oxygen + oxygen_change))
+                    if room.oxygen < 10.0:
+                        for c in room.crew_members:
+                            c.health -= dt * 3.0 # Suffocation damage
+
+            # Medbay logic
+            if system.type == SystemType.MEDBAY and system.is_functional:
+                for room in ship.rooms:
+                    if room.system and room.system.type == SystemType.MEDBAY:
+                        for c in room.crew_members:
+                            c.health = min(c.max_health, c.health + dt * 15.0)
+
             # Update Crew skills if manning
             for crew in ship.crew:
                 if crew.room and crew.room.system == system and not self.state.is_paused:
@@ -156,10 +196,23 @@ class GameEngine:
         if not self.state.enemy_ship:
             return
 
-        # Simple AI firing and Player firing would go here
-        # For now, let's just say weapons fire when ready
+        # Player firing
         self._fire_weapons(self.state.player_ship, self.state.enemy_ship)
+
+        # Check if enemy survived
+        if not self.state.enemy_ship:
+            return
+
+        # Enemy firing
         self._fire_weapons(self.state.enemy_ship, self.state.player_ship)
+
+    def _generate_boss(self) -> Ship:
+        # Boss is a very beefy ship
+        ship = generate_enemy(10) # High difficulty
+        ship.name = "REBEL FLAGSHIP"
+        ship.hull = 100
+        ship.max_hull = 100
+        return ship
 
     def _fire_weapons(self, attacker: Ship, target: Ship):
         for w in attacker.weapons:
@@ -190,7 +243,6 @@ class GameEngine:
 
             evasion += pilot_sys.manned_bonus # Pilot manning bonus
 
-        import random
         if random.random() < evasion:
             self.state.add_log(f"Miss! ({target.name} evaded)")
             return
