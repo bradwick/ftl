@@ -172,9 +172,28 @@ class PygameRenderer:
 
             # Crew
             for i, c in enumerate(r.crew_members):
-                # Simple circle for crew
-                pygame.draw.circle(self.screen, (255, 255, 255), (rect[0] + rect[2]//2, rect[1] + rect[3]//2), 8)
-                self._draw_text(c.name[0], rect[0] + rect[2]//2 - 4, rect[1] + rect[3]//2 - 8, (0, 0, 0))
+                # More distinct character shape: head and body
+                cx, cy = rect[0] + rect[2]//2, rect[1] + rect[3]//2
+
+                # Determine color based on highest skill
+                max_skill_name = max(c.skills.items(), key=lambda x: x[1])[0]
+                skill_colors = {
+                    "pilot": (100, 100, 255),
+                    "engines": (255, 255, 100),
+                    "shields": (100, 255, 255),
+                    "weapons": (255, 100, 100),
+                    "repair": (100, 255, 100),
+                    "combat": (255, 100, 255)
+                }
+                char_color = skill_colors.get(max_skill_name, (200, 200, 200))
+                if c.skills[max_skill_name] < 0.1: char_color = (200, 200, 200)
+
+                # Draw body
+                pygame.draw.rect(self.screen, char_color, (cx - 6, cy, 12, 10))
+                # Draw head
+                pygame.draw.circle(self.screen, (255, 220, 180), (cx, cy - 4), 6)
+                # Draw initial
+                self._draw_text(c.name[0], cx - 4, cy - 10, (0, 0, 0))
 
     def _draw_footer(self, state: GameState):
         ship = state.player_ship
@@ -201,4 +220,4 @@ class PygameRenderer:
             self._draw_text(f"{c.name}: HP {int(c.health)} | {skill_str}", 810, y + 25 + i * 20)
 
         # Commands
-        self._draw_text("COMMANDS: SPACE:Pause | 1/!:Weapons | 2/\":Shields | 3:Engines | 0:Oxygen | c:Crew | 4-9:Move | t:Target | j:Jump | q:Quit", 20, HEIGHT - 30, (150, 150, 150))
+        self._draw_text("COMMANDS: SPACE:Pause | W/S/E/O/M/P:Power(Shift to dec) | c:Crew | 4-9:Move | t:Target | j:Jump | s:Shop | q:Quit", 20, HEIGHT - 30, (150, 150, 150))

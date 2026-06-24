@@ -41,6 +41,15 @@ def create_enemy_ship():
     ship.weapons.append(Weapon("Basic Laser", 1, 5.0, 1))
     return ship
 
+def get_available_weapons():
+    return [
+        Weapon("Burst Laser II", 1, 3.0, 2, shots=3, weapon_type=WeaponType.LASER, scrap_cost=80),
+        Weapon("Artemis Missile", 2, 4.0, 1, weapon_type=WeaponType.MISSILE, scrap_cost=50),
+        Weapon("Ion Blast", 1, 2.0, 1, weapon_type=WeaponType.ION, scrap_cost=40),
+        Weapon("Mini Beam", 2, 5.0, 1, weapon_type=WeaponType.BEAM, scrap_cost=60),
+        Weapon("Flak I", 1, 4.0, 2, shots=3, weapon_type=WeaponType.LASER, scrap_cost=65),
+    ]
+
 def main():
     FPS = 60
     player_ship = create_initial_ship()
@@ -96,14 +105,18 @@ def main():
                                 sys.current_power -= 1
                                 ship.reactor_used -= 1
 
-                    if key == pygame.K_1:
+                    if key == pygame.K_w:
                         adjust_power(SystemType.WEAPONS, -1 if is_shift else 1)
-                    elif key == pygame.K_2:
+                    elif key == pygame.K_s:
                         adjust_power(SystemType.SHIELDS, -1 if is_shift else 1)
-                    elif key == pygame.K_3:
+                    elif key == pygame.K_e:
                         adjust_power(SystemType.ENGINES, -1 if is_shift else 1)
-                    elif key == pygame.K_0:
+                    elif key == pygame.K_o:
                         adjust_power(SystemType.OXYGEN, -1 if is_shift else 1)
+                    elif key == pygame.K_m:
+                        adjust_power(SystemType.MEDBAY, -1 if is_shift else 1)
+                    elif key == pygame.K_p:
+                        adjust_power(SystemType.PILOT, -1 if is_shift else 1)
                     elif key == pygame.K_u:
                         if ship.scrap >= 20:
                             ship.scrap -= 20
@@ -130,7 +143,7 @@ def main():
                                 state.add_log(f"Moving {selection['crew'].name} to {target.id}")
                     elif key == pygame.K_t and state.enemy_ship:
                         enemy = state.enemy_ship
-                        if not state.selected_target_room:
+                        if not state.selected_target_room or state.selected_target_room not in enemy.rooms:
                             state.selected_target_room = enemy.rooms[0]
                         else:
                             idx = enemy.rooms.index(state.selected_target_room)
@@ -140,6 +153,16 @@ def main():
                         state.is_jumping = True
                         state.is_paused = False
                         state.add_log("Initiating FTL Jump...")
+                    elif key == pygame.K_s and not state.enemy_ship:
+                        # Simple Shop
+                        available = get_available_weapons()
+                        # Buy the first one you don't have and can afford
+                        for w in available:
+                            if w.name not in [pw.name for pw in ship.weapons] and ship.scrap >= w.scrap_cost:
+                                ship.scrap -= w.scrap_cost
+                                ship.weapons.append(w)
+                                state.add_log(f"Purchased {w.name} for {w.scrap_cost} scrap.")
+                                break
 
         # Update
         engine.update()

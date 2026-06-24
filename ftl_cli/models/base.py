@@ -77,15 +77,23 @@ class Crew:
     def move_to(self, target_room: Room):
         self.target_room = target_room
 
+class WeaponType(Enum):
+    LASER = auto()
+    MISSILE = auto()
+    ION = auto()
+    BEAM = auto()
+
 class Weapon:
-    def __init__(self, name: str, damage: int, cooldown: float, power_req: int, shots: int = 1):
+    def __init__(self, name: str, damage: int, cooldown: float, power_req: int, shots: int = 1, weapon_type: WeaponType = WeaponType.LASER, scrap_cost: int = 50):
         self.name = name
         self.damage = damage
         self.cooldown_max = cooldown
         self.cooldown_current = 0.0
         self.power_req = power_req
         self.shots = shots
+        self.type = weapon_type
         self.is_active = False
+        self.scrap_cost = scrap_cost
 
     def update(self, dt: float, powered: bool):
         if powered:

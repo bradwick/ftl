@@ -1,7 +1,7 @@
 import time
 import random
 from typing import List, Optional, Callable
-from ftl_cli.models.base import Ship, Crew, SystemType, Room
+from ftl_cli.models.base import Ship, Crew, SystemType, Room, WeaponType
 from ftl_cli.utils.pathfinding import find_path
 from ftl_cli.utils.generators import generate_enemy
 
@@ -55,9 +55,11 @@ class GameEngine:
                 # Boss check
                 if self.state.sector == 3 and self.state.current_beacon == self.state.beacons_in_sector - 1:
                     self.state.enemy_ship = self._generate_boss()
+                    self.state.selected_target_room = None
                     self.state.add_log("WARNING: REBEL FLAGSHIP DETECTED!")
                 else:
                     self.state.enemy_ship = generate_enemy(self.state.difficulty)
+                    self.state.selected_target_room = None
                     self.state.add_log(f"Jump complete! Warning: {self.state.enemy_ship.name} detected!")
             return # Don't update ships while jumping
 
@@ -236,10 +238,11 @@ class GameEngine:
                 # Impact logic: each shot can be evaded or shielded
                 for _ in range(w.shots):
                     if target.hull > 0:
-                        self._apply_damage(target, w.damage, target_room)
+                        self._apply_damage(target, w.damage, target_room, w.type)
 
-    def _apply_damage(self, target: Ship, damage: int, forced_target_room: Optional[Room] = None):
+    def _apply_damage(self, target: Ship, damage: int, forced_target_room: Optional[Room] = None, weapon_type: WeaponType = WeaponType.LASER):
         # Evasion check (Engines + Pilot)
+        # Beams cannot be evaded
         evasion = 0.0
         engine_sys = target.systems.get(SystemType.ENGINES)
         pilot_sys = target.systems.get(SystemType.PILOT)
@@ -252,24 +255,23 @@ class GameEngine:
 
             evasion += pilot_sys.manned_bonus # Pilot manning bonus
 
-        if random.random() < evasion:
+        if weapon_type != WeaponType.BEAM and random.random() < evasion:
             self.state.add_log(f"Miss! ({target.name} evaded)")
             return
 
         # Shields first
         shield_sys = target.systems.get(SystemType.SHIELDS)
-        if shield_sys and shield_sys.is_functional:
-            # FTL Shields: bubbles are current_power // 2
-            # Let's track shield "health" or recharge
-            # For simplicity: shields absorb 1 damage and go on cooldown
-            # But wait, FTL shields absorb whole shots.
-            # Simplified: if bubbles > 0, decrement bubbles for this shot
-            # We need to track current bubbles separately from power
+        if shield_sys and shield_sys.is_functional and weapon_type != WeaponType.MISSILE:
             if not hasattr(shield_sys, 'bubbles'):
                 shield_sys.bubbles = shield_sys.current_power // 2
                 shield_sys.recharge = 0.0
 
             if shield_sys.bubbles > 0:
+                if weapon_type == WeaponType.ION:
+                    # Ion damages shields directly
+                    shield_sys.take_damage(1)
+                    target.reactor_used -= 1
+
                 shield_sys.bubbles -= 1
                 self.state.add_log(f"Shields absorbed damage!")
                 return
