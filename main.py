@@ -80,6 +80,11 @@ def main():
             if sys and sys.current_power > 0:
                 sys.current_power -= 1
                 ship.reactor_used -= 1
+        elif val == 'j' and state.is_paused and not state.enemy_ship and not state.is_jumping:
+            # Jump
+            state.is_jumping = True
+            state.is_paused = False
+            state.add_log("Initiating FTL Jump...")
         elif val == 'c' and state.is_paused:
             # Cycle crew selection
             if not selection["crew"]:

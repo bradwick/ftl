@@ -1,6 +1,7 @@
 import time
+import random
 from typing import List, Optional, Callable
-from ftl_cli.models.base import Ship, Crew, SystemType, Room
+from ftl_cli.models.base import Ship, Crew, SystemType, Room, WeaponType
 from ftl_cli.utils.pathfinding import find_path
 from ftl_cli.utils.generators import generate_enemy
 
@@ -15,6 +16,11 @@ class GameState:
         self.difficulty = 1
         self.encounters_won = 0
         self.selected_target_room: Optional[Room] = None
+        self.sector = 1
+        self.beacons_in_sector = 5
+        self.current_beacon = 0
+        self.is_jumping = False
+        self.jump_timer = 0.0
 
     def add_log(self, message: str):
         self.log.append(message)
@@ -34,13 +40,33 @@ class GameEngine:
         if self.state.is_paused or self.state.game_over:
             return
 
-        # Progression: Spawn enemy if none exists
-        if not self.state.enemy_ship:
-            self.state.time_acc += dt
-            if self.state.time_acc > 5.0: # 5 second delay between encounters
-                self.state.enemy_ship = generate_enemy(self.state.difficulty)
-                self.state.add_log(f"Jump complete! Warning: {self.state.enemy_ship.name} detected!")
-                self.state.time_acc = 0.0
+        # Jump Logic
+        if self.state.is_jumping:
+            self.state.jump_timer += dt
+            if self.state.jump_timer >= 3.0:
+                self.state.is_jumping = False
+                self.state.jump_timer = 0.0
+                self.state.current_beacon += 1
+                if self.state.current_beacon >= self.state.beacons_in_sector:
+                    self.state.sector += 1
+                    self.state.current_beacon = 0
+                    self.state.add_log(f"Entering Sector {self.state.sector}...")
+
+                # Boss check
+                if self.state.sector == 3 and self.state.current_beacon == self.state.beacons_in_sector - 1:
+                    self.state.enemy_ship = self._generate_boss()
+                    self.state.selected_target_room = None
+                    self.state.add_log("WARNING: REBEL FLAGSHIP DETECTED!")
+                else:
+                    self.state.enemy_ship = generate_enemy(self.state.difficulty)
+                    self.state.selected_target_room = None
+                    self.state.add_log(f"Jump complete! Warning: {self.state.enemy_ship.name} detected!")
+            return # Don't update ships while jumping
+
+        # Progression: Spawn enemy if none exists and not jumping
+        if not self.state.enemy_ship and not self.state.is_jumping:
+            # Player needs to initiate jump
+            pass
 
         self._update_ship(self.state.player_ship, dt)
         if self.state.enemy_ship:
@@ -71,6 +97,22 @@ class GameEngine:
 
         # Update Systems
         for system in ship.systems.values():
+            # Oxygen logic
+            if system.type == SystemType.OXYGEN:
+                oxygen_change = dt * 3.0 if system.is_functional else -dt * 1.5
+                for room in ship.rooms:
+                    room.oxygen = max(0.0, min(100.0, room.oxygen + oxygen_change))
+                    if room.oxygen < 10.0:
+                        for c in room.crew_members:
+                            c.health -= dt * 3.0 # Suffocation damage
+
+            # Medbay logic
+            if system.type == SystemType.MEDBAY and system.is_functional:
+                for room in ship.rooms:
+                    if room.system and room.system.type == SystemType.MEDBAY:
+                        for c in room.crew_members:
+                            c.health = min(c.max_health, c.health + dt * 15.0)
+
             # Update Crew skills if manning
             for crew in ship.crew:
                 if crew.room and crew.room.system == system and not self.state.is_paused:
@@ -103,6 +145,13 @@ class GameEngine:
 
             # Check if manned
             system.is_manned = any(c.room.system == system for c in ship.crew if c.room and c.room.system)
+
+            # Repair logic
+            if system.health < system.max_power:
+                crew_repairing = [c for c in ship.crew if c.room and c.room.system == system]
+                if crew_repairing and not self.state.is_paused:
+                    repair_rate = 0.5 * len(crew_repairing) * dt # 0.5 HP per second per crew
+                    system.repair(repair_rate)
             # FTL logic: manning provides bonuses
             if system.is_manned:
                 # Find the best crew member for this system
@@ -121,7 +170,8 @@ class GameEngine:
                 if room.fire_level > 0:
                     # Fire damages system in room
                     if room.system:
-                        room.system.take_damage(dt * 0.1) # Fire damage rate
+                        power_lost = room.system.take_damage(dt * 0.1) # Fire damage rate
+                        ship.reactor_used -= power_lost
                     # Fire damages crew in room
                     for c in room.crew_members:
                         c.health -= dt * 5.0
@@ -156,10 +206,23 @@ class GameEngine:
         if not self.state.enemy_ship:
             return
 
-        # Simple AI firing and Player firing would go here
-        # For now, let's just say weapons fire when ready
+        # Player firing
         self._fire_weapons(self.state.player_ship, self.state.enemy_ship)
+
+        # Check if enemy survived
+        if not self.state.enemy_ship:
+            return
+
+        # Enemy firing
         self._fire_weapons(self.state.enemy_ship, self.state.player_ship)
+
+    def _generate_boss(self) -> Ship:
+        # Boss is a very beefy ship
+        ship = generate_enemy(10) # High difficulty
+        ship.name = "REBEL FLAGSHIP"
+        ship.hull = 100
+        ship.max_hull = 100
+        return ship
 
     def _fire_weapons(self, attacker: Ship, target: Ship):
         for w in attacker.weapons:
@@ -174,10 +237,12 @@ class GameEngine:
 
                 # Impact logic: each shot can be evaded or shielded
                 for _ in range(w.shots):
-                    self._apply_damage(target, w.damage, target_room)
+                    if target.hull > 0:
+                        self._apply_damage(target, w.damage, target_room, w.type)
 
-    def _apply_damage(self, target: Ship, damage: int, forced_target_room: Optional[Room] = None):
+    def _apply_damage(self, target: Ship, damage: int, forced_target_room: Optional[Room] = None, weapon_type: WeaponType = WeaponType.LASER):
         # Evasion check (Engines + Pilot)
+        # Beams cannot be evaded
         evasion = 0.0
         engine_sys = target.systems.get(SystemType.ENGINES)
         pilot_sys = target.systems.get(SystemType.PILOT)
@@ -190,38 +255,37 @@ class GameEngine:
 
             evasion += pilot_sys.manned_bonus # Pilot manning bonus
 
-        import random
-        if random.random() < evasion:
+        if weapon_type != WeaponType.BEAM and random.random() < evasion:
             self.state.add_log(f"Miss! ({target.name} evaded)")
             return
 
         # Shields first
         shield_sys = target.systems.get(SystemType.SHIELDS)
-        if shield_sys and shield_sys.is_functional:
-            # FTL Shields: bubbles are current_power // 2
-            # Let's track shield "health" or recharge
-            # For simplicity: shields absorb 1 damage and go on cooldown
-            # But wait, FTL shields absorb whole shots.
-            # Simplified: if bubbles > 0, decrement bubbles for this shot
-            # We need to track current bubbles separately from power
+        if shield_sys and shield_sys.is_functional and weapon_type != WeaponType.MISSILE:
             if not hasattr(shield_sys, 'bubbles'):
                 shield_sys.bubbles = shield_sys.current_power // 2
                 shield_sys.recharge = 0.0
 
             if shield_sys.bubbles > 0:
+                if weapon_type == WeaponType.ION:
+                    # Ion damages shields directly
+                    shield_sys.take_damage(1)
+                    target.reactor_used -= 1
+
                 shield_sys.bubbles -= 1
                 self.state.add_log(f"Shields absorbed damage!")
                 return
 
         # Hull damage
-        target.hull -= damage
+        target.hull = max(0, target.hull - damage)
         self.state.add_log(f"{target.name} hit for {damage} damage!")
 
         # System damage
         if target.rooms:
             hit_room = forced_target_room if forced_target_room and forced_target_room in target.rooms else random.choice(target.rooms)
             if hit_room.system:
-                hit_room.system.take_damage(1) # Systems take 1 damage per hit
+                power_lost = hit_room.system.take_damage(1) # Systems take 1 damage per hit
+                target.reactor_used -= power_lost
                 self.state.add_log(f"{hit_room.id} system damaged!")
 
             # Fire chance

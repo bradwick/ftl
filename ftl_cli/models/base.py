@@ -24,9 +24,12 @@ class System:
     def is_functional(self) -> bool:
         return self.health > 0 and self.current_power > 0
 
-    def take_damage(self, amount: int):
-        self.health = max(0, self.health - amount)
-        self.current_power = min(self.current_power, self.health)
+    def take_damage(self, amount: int) -> int:
+        """Returns the amount of power lost due to damage."""
+        old_power = self.current_power
+        self.health = max(0.0, float(self.health) - amount)
+        self.current_power = min(self.current_power, int(self.health))
+        return old_power - self.current_power
 
     def repair(self, amount: float):
         self.health = min(self.max_power, self.health + amount)
@@ -74,15 +77,23 @@ class Crew:
     def move_to(self, target_room: Room):
         self.target_room = target_room
 
+class WeaponType(Enum):
+    LASER = auto()
+    MISSILE = auto()
+    ION = auto()
+    BEAM = auto()
+
 class Weapon:
-    def __init__(self, name: str, damage: int, cooldown: float, power_req: int, shots: int = 1):
+    def __init__(self, name: str, damage: int, cooldown: float, power_req: int, shots: int = 1, weapon_type: WeaponType = WeaponType.LASER, scrap_cost: int = 50):
         self.name = name
         self.damage = damage
         self.cooldown_max = cooldown
         self.cooldown_current = 0.0
         self.power_req = power_req
         self.shots = shots
+        self.type = weapon_type
         self.is_active = False
+        self.scrap_cost = scrap_cost
 
     def update(self, dt: float, powered: bool):
         if powered:
