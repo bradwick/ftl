@@ -59,6 +59,16 @@ def main():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if state.is_paused:
+                    mouse_pos = pygame.mouse.get_pos()
+                    ship = state.player_ship
+                    enemy = state.enemy_ship
+
+                    # Logic to handle clicks on rooms or systems
+                    # For now, let's keep it simple with keyboard,
+                    # but we could add mouse selection here.
+                    pass
             elif event.type == pygame.KEYDOWN:
                 key = event.key
                 ship = state.player_ship
@@ -68,28 +78,32 @@ def main():
                 elif key == pygame.K_q:
                     running = False
 
-                # Input handling similar to CLI
+                # Input handling
                 if state.is_paused:
+                    mods = pygame.key.get_mods()
+                    is_shift = mods & pygame.KMOD_SHIFT
+
+                    # Unified power handler
+                    def adjust_power(sys_type, delta):
+                        sys = ship.systems.get(sys_type)
+                        if not sys: return
+                        if delta > 0:
+                            if sys.current_power < sys.health and ship.reactor_available > 0:
+                                sys.current_power += 1
+                                ship.reactor_used += 1
+                        else:
+                            if sys.current_power > 0:
+                                sys.current_power -= 1
+                                ship.reactor_used -= 1
+
                     if key == pygame.K_1:
-                        sys_w = ship.systems.get(SystemType.WEAPONS)
-                        if sys_w and sys_w.current_power < sys_w.max_power and ship.reactor_available > 0:
-                            sys_w.current_power += 1
-                            ship.reactor_used += 1
-                    elif key == pygame.K_EXCLAIM or (key == pygame.K_1 and pygame.key.get_mods() & pygame.KMOD_SHIFT):
-                         sys_w = ship.systems.get(SystemType.WEAPONS)
-                         if sys_w and sys_w.current_power > 0:
-                            sys_w.current_power -= 1
-                            ship.reactor_used -= 1
+                        adjust_power(SystemType.WEAPONS, -1 if is_shift else 1)
                     elif key == pygame.K_2:
-                        sys_s = ship.systems.get(SystemType.SHIELDS)
-                        if sys_s and sys_s.current_power < sys_s.max_power and ship.reactor_available > 0:
-                            sys_s.current_power += 1
-                            ship.reactor_used += 1
-                    elif key == pygame.K_QUOTEDBL or (key == pygame.K_2 and pygame.key.get_mods() & pygame.KMOD_SHIFT):
-                        sys_s = ship.systems.get(SystemType.SHIELDS)
-                        if sys_s and sys_s.current_power > 0:
-                            sys_s.current_power -= 1
-                            ship.reactor_used -= 1
+                        adjust_power(SystemType.SHIELDS, -1 if is_shift else 1)
+                    elif key == pygame.K_3:
+                        adjust_power(SystemType.ENGINES, -1 if is_shift else 1)
+                    elif key == pygame.K_0:
+                        adjust_power(SystemType.OXYGEN, -1 if is_shift else 1)
                     elif key == pygame.K_u:
                         if ship.scrap >= 20:
                             ship.scrap -= 20

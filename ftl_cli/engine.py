@@ -279,7 +279,7 @@ class GameEngine:
         self.state.add_log(f"{target.name} hit for {damage} damage!")
 
         # System damage
-        if target.rooms and target.hull > 0:
+        if target.rooms:
             hit_room = forced_target_room if forced_target_room and forced_target_room in target.rooms else random.choice(target.rooms)
             if hit_room.system:
                 power_lost = hit_room.system.take_damage(1) # Systems take 1 damage per hit
